@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
 
+const EMAILJS_SERVICE_ID = "service_o3npejs";
+const EMAILJS_TEMPLATE_ID = "template_l8h5142";
+const EMAILJS_PUBLIC_KEY = "r2n6Ym8e1L7aO1wIN";
+
 const CHECKLIST_DATA = {
   pranzo: [
     {
@@ -53,6 +57,7 @@ export default function ChecklistApp() {
   const [showModal, setShowModal] = useState(false);
   const [responsabile, setResponsabile] = useState("");
   const [coperti, setCoperti] = useState("");
+  const [sending, setSending] = useState(false);
 
   const today = new Date().toLocaleDateString("it-IT", {
     weekday: "long",
@@ -90,15 +95,62 @@ export default function ChecklistApp() {
 
   const alreadySubmitted = submitted[serviceKey(activeService)];
 
-  const handleSubmit = () => {
+  const buildVociText = () => {
+    return categories.map((cat) => {
+      const voci = cat.items.map((item) => `  ✓ ${item}`).join("\n");
+      return `${cat.category}:\n${voci}`;
+    }).join("\n\n");
+  };
+
+  const sendEmail = async () => {
+    const templateParams = {
+      servizio: activeService.toUpperCase(),
+      ristorante: "Trezzano",
+      responsabile: responsabile,
+      coperti: coperti || "—",
+      voci: buildVociText(),
+      note: note || "Nessuna nota",
+      data: today,
+    };
+
+    const url = "https://api.emailjs.com/api/v1.0/email/send";
+    const body = {
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY,
+      template_params: templateParams,
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) throw new Error("Errore invio email");
+  };
+
+  const handleSubmit = async () => {
     if (!responsabile.trim()) {
       alert("Inserisci il nome del responsabile prima di inviare.");
       return;
     }
-    const data = { checked, note, responsabile, coperti, timestamp: new Date().toISOString() };
-    localStorage.setItem(`checklist_${serviceKey(activeService)}`, JSON.stringify(data));
-    setSubmitted((prev) => ({ ...prev, [serviceKey(activeService)]: true }));
-    setShowModal(true);
+    setSending(true);
+    try {
+      await sendEmail();
+      const data = { checked, note, responsabile, coperti, timestamp: new Date().toISOString() };
+      localStorage.setItem(`checklist_${serviceKey(activeService)}`, JSON.stringify(data));
+      setSubmitted((prev) => ({ ...prev, [serviceKey(activeService)]: true }));
+      setShowModal(true);
+    } catch (e) {
+      alert("Checklist salvata ma invio email fallito. Controlla la connessione.");
+      const data = { checked, note, responsabile, coperti, timestamp: new Date().toISOString() };
+      localStorage.setItem(`checklist_${serviceKey(activeService)}`, JSON.stringify(data));
+      setSubmitted((prev) => ({ ...prev, [serviceKey(activeService)]: true }));
+      setShowModal(true);
+    } finally {
+      setSending(false);
+    }
   };
 
   const reset = () => {
@@ -137,7 +189,6 @@ export default function ChecklistApp() {
               </h1>
               <div style={{ fontSize: 12, color: "#5a5040", marginTop: 4, textTransform: "capitalize" }}>{today}</div>
             </div>
-            {/* Progress ring */}
             <div style={{ textAlign: "center" }}>
               <div style={{
                 width: 60, height: 60,
@@ -158,7 +209,6 @@ export default function ChecklistApp() {
             </div>
           </div>
 
-          {/* Service Toggle */}
           <div style={{
             display: "flex", gap: 0, marginTop: 20,
             border: "1px solid #2a2620", borderRadius: 6, overflow: "hidden",
@@ -185,10 +235,8 @@ export default function ChecklistApp() {
         </div>
       </div>
 
-      {/* Body */}
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "24px 16px 0" }}>
 
-        {/* Responsabile + Coperti */}
         <div style={{
           background: "#1a1712", border: "1px solid #2a2620",
           borderRadius: 8, padding: "14px 16px", marginBottom: 20,
@@ -230,7 +278,6 @@ export default function ChecklistApp() {
           </div>
         </div>
 
-        {/* Categories */}
         {categories.map((cat, ci) => (
           <div key={ci} style={{
             marginBottom: 16,
@@ -290,7 +337,6 @@ export default function ChecklistApp() {
           </div>
         ))}
 
-        {/* Note */}
         <div style={{
           background: "#1a1712", border: "1px solid #2a2620",
           borderRadius: 8, padding: "14px 16px", marginBottom: 20,
@@ -312,23 +358,24 @@ export default function ChecklistApp() {
           />
         </div>
 
-        {/* CTA */}
         {!alreadySubmitted ? (
           <button
             onClick={handleSubmit}
-            disabled={checkedCount < total}
+            disabled={checkedCount < total || sending}
             style={{
               width: "100%", padding: "16px",
-              background: checkedCount === total ? "#c8a96e" : "#2a2620",
-              color: checkedCount === total ? "#0f0e0c" : "#5a5040",
+              background: checkedCount === total && !sending ? "#c8a96e" : "#2a2620",
+              color: checkedCount === total && !sending ? "#0f0e0c" : "#5a5040",
               border: "none", borderRadius: 8,
               fontSize: 13, letterSpacing: 3, textTransform: "uppercase",
-              cursor: checkedCount === total ? "pointer" : "not-allowed",
+              cursor: checkedCount === total && !sending ? "pointer" : "not-allowed",
               fontFamily: "inherit", fontWeight: "bold",
               transition: "all 0.2s",
             }}
           >
-            {checkedCount < total
+            {sending
+              ? "Invio in corso..."
+              : checkedCount < total
               ? `Completa tutti i punti (${total - checkedCount} mancanti)`
               : "✓ Conferma Chiusura Servizio"}
           </button>
@@ -357,7 +404,6 @@ export default function ChecklistApp() {
         )}
       </div>
 
-      {/* Modal */}
       {showModal && (
         <div
           onClick={() => setShowModal(false)}
@@ -379,10 +425,11 @@ export default function ChecklistApp() {
             <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: "normal", color: "#c8a96e" }}>
               Servizio Chiuso
             </h2>
-            <p style={{ color: "#8a7a5a", fontSize: 14, margin: "0 0 24px", lineHeight: 1.6 }}>
+            <p style={{ color: "#8a7a5a", fontSize: 14, margin: "0 0 8px", lineHeight: 1.6 }}>
               Chiusura <strong style={{ color: "#e8e0d0", textTransform: "capitalize" }}>{activeService}</strong> registrata da <strong style={{ color: "#e8e0d0" }}>{responsabile}</strong>
               {coperti && <><br /><span style={{ color: "#c8a96e" }}>{coperti} coperti</span></>}
             </p>
+            <p style={{ color: "#5a6a50", fontSize: 12, margin: "0 0 24px" }}>📧 Report inviato via email</p>
             <button
               onClick={() => setShowModal(false)}
               style={{
